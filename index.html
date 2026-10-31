@@ -181,10 +181,11 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
   // Política vigente. Para cambiarla, pídele a Claude que actualice estos valores.
   var INICIAL_MIN = 0.5;
   var INICIAL_MAX = 0.7;
+  var INTERES_POR_CUOTA = 0.10;
   var PLANES = [
-    { meses: 3, cuotas: 6,  interes: 0.30 },
-    { meses: 4, cuotas: 8,  interes: 0.40 },
-    { meses: 5, cuotas: 10, interes: 0.50 }
+    { meses: 3, cuotas: 6 },
+    { meses: 4, cuotas: 8 },
+    { meses: 5, cuotas: 10 }
   ];
 
   var $ = function (id) { return document.getElementById(id); };
@@ -230,7 +231,8 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
 
   function calcular(precio, inicial, p) {
     var financiado = precio - inicial;
-    var cuota = redondear(financiado * (1 + p.interes) / p.cuotas);
+    var interes = redondear(financiado * INTERES_POR_CUOTA * p.cuotas);
+    var cuota = redondear((financiado + interes) / p.cuotas);
     return { inicial: inicial, cuota: cuota };
   }
 

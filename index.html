@@ -229,7 +229,8 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
   }
 
   function calcular(precio, inicial, p) {
-    var cuota = redondear((precio * (1 + p.interes) - inicial) / p.cuotas);
+    var financiado = precio - inicial;
+    var cuota = redondear(financiado * (1 + p.interes) / p.cuotas);
     return { inicial: inicial, cuota: cuota };
   }
 

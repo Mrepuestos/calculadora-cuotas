@@ -23,6 +23,7 @@
   --accent-ink: #03101F;
   --accent-soft: #0C2038;
   --ok: #4DD6A0;
+  --err: #FF8A8A;
   --font-ui: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   color-scheme: dark;
@@ -85,6 +86,9 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 #gate input { width: 100%; height: 54px; padding: 0 14px; font-family: var(--font-num); font-size: 22px; letter-spacing: .3em; color: var(--fg); background: var(--bg); border: 1.5px solid var(--line); border-radius: 10px; }
 #gate input:focus-visible { outline: 3px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
 #gate .err { color: #FF8A8A; font-size: 13px; min-height: 18px; margin: 0; }
+.hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; min-height: 36px; }
+.hint.err { color: var(--err); }
+.money input::placeholder { font-size: 18px; font-weight: 500; color: var(--muted); }
 button.copy {
   width: 100%; min-height: 52px; border: 0; border-radius: 10px; cursor: pointer;
   background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 700; font-size: 15px;
@@ -131,6 +135,11 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
       <label class="field" for="precio">Valor del equipo</label>
       <div class="money"><span>$</span><input id="precio" type="text" inputmode="decimal" autocomplete="off" value="100" aria-describedby="ayuda"></div>
     </div>
+    <div>
+      <label class="field" for="inicialcli">Inicial del cliente</label>
+      <div class="money"><span>$</span><input id="inicialcli" type="text" inputmode="decimal" autocomplete="off" placeholder="Mínima" aria-describedby="hint"></div>
+      <p class="hint" id="hint" aria-live="polite"></p>
+    </div>
     <fieldset>
       <div class="legend">Plazo</div>
       <div class="seg" id="plazos"></div>
@@ -144,7 +153,7 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
       <div class="s" id="detalle">Escribe el valor del equipo</div>
     </div>
     <div class="rows">
-      <div class="row"><span class="k">Inicial</span><span class="v" id="inicial">-</span></div>
+      <div class="row"><span class="k" id="kinicial">Inicial</span><span class="v" id="inicial">-</span></div>
       <div class="row"><span class="k">Cuotas</span><span class="v" id="ncuotas">-</span></div>
     </div>
     <p class="preview" id="texto">-</p>
@@ -170,7 +179,8 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
 <script>
 (function () {
   // Política vigente. Para cambiarla, pídele a Claude que actualice estos valores.
-  var INICIAL = 0.5;
+  var INICIAL_MIN = 0.5;
+  var INICIAL_MAX = 0.7;
   var PLANES = [
     { meses: 3, cuotas: 6,  interes: 0.30 },
     { meses: 4, cuotas: 8,  interes: 0.40 },
@@ -202,54 +212,90 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
     });
   });
 
-  function leerPrecio() {
-    var t = $('precio').value.trim().replace(/\s/g, '');
+  function leerNumero(id) {
+    var t = $(id).value.trim().replace(/\s/g, '');
     if (t.indexOf(',') > -1 && t.indexOf('.') > -1) t = t.replace(/\./g, '').replace(',', '.');
     else t = t.replace(',', '.');
     var n = parseFloat(t);
     return (isFinite(n) && n > 0) ? n : 0;
   }
+  function leerPrecio() { return leerNumero('precio'); }
 
-  function calcular(precio, p) {
-    var inicial = redondear(precio * INICIAL);
+  function limites(precio) {
+    var min = redondear(precio * INICIAL_MIN);
+    var max = Math.floor(precio * INICIAL_MAX + 1e-9);
+    if (max < min) max = min;
+    return { min: min, max: max };
+  }
+
+  function calcular(precio, inicial, p) {
     var cuota = redondear((precio * (1 + p.interes) - inicial) / p.cuotas);
     return { inicial: inicial, cuota: cuota };
   }
 
   var mensaje = '';
+  function vacio(detalle) {
+    $('cuota').textContent = '-';
+    $('detalle').textContent = detalle;
+    $('inicial').textContent = '-';
+    $('kinicial').textContent = 'Inicial';
+    $('ncuotas').textContent = '-';
+    $('texto').textContent = '-';
+    $('copiar').disabled = true;
+    mensaje = '';
+    var tbody = $('tabla'); tbody.innerHTML = '';
+    PLANES.forEach(function (q, i) {
+      var tr = document.createElement('tr'); if (i === seleccionado) tr.className = 'on';
+      tr.innerHTML = '<td>' + q.meses + ' meses</td><td class="n">' + q.cuotas + '</td><td class="n">-</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
   function pintar() {
     var precio = leerPrecio();
     var p = PLANES[seleccionado];
-    var tbody = $('tabla'); tbody.innerHTML = '';
+    var hint = $('hint');
+    hint.className = 'hint';
 
     if (!precio) {
-      $('cuota').textContent = '-';
-      $('detalle').textContent = 'Escribe el valor del equipo';
-      $('inicial').textContent = '-';
-      $('ncuotas').textContent = '-';
-      $('texto').textContent = '-';
-      $('copiar').disabled = true;
-      mensaje = '';
-      PLANES.forEach(function (q, i) {
-        var tr = document.createElement('tr'); if (i === seleccionado) tr.className = 'on';
-        tr.innerHTML = '<td>' + q.meses + ' meses</td><td class="n">' + q.cuotas + '</td><td class="n">-</td>';
-        tbody.appendChild(tr);
-      });
+      hint.textContent = 'Escribe primero el valor del equipo.';
+      vacio('Escribe el valor del equipo');
       return;
     }
 
-    var r = calcular(precio, p);
+    var lim = limites(precio);
+    var txt = $('inicialcli').value.trim();
+    var inicial = (txt === '') ? lim.min : redondear(leerNumero('inicialcli'));
+
+    if (inicial < lim.min) {
+      hint.className = 'hint err';
+      hint.textContent = 'La inicial no puede ser menor a ' + money(lim.min) + '.';
+      vacio('Corrige la inicial para ver la cuota');
+      return;
+    }
+    if (inicial > lim.max) {
+      hint.className = 'hint err';
+      hint.textContent = 'La inicial no puede pasar de ' + money(lim.max) + '.';
+      vacio('Corrige la inicial para ver la cuota');
+      return;
+    }
+
+    hint.textContent = 'Inicial mínima: ' + money(lim.min) + (txt === '' ? '. Se está usando la mínima.' : '.');
+
+    var r = calcular(precio, inicial, p);
     $('cuota').textContent = money(r.cuota);
     $('detalle').textContent = p.cuotas + ' cuotas cada 15 días, en ' + p.meses + ' meses';
-    $('inicial').textContent = money(r.inicial);
+    $('inicial').textContent = money(inicial);
+    $('kinicial').textContent = 'Inicial';
     $('ncuotas').textContent = p.cuotas;
-    mensaje = 'Financiamiento CrediFacil. Equipo de ' + money(precio) + ': inicial de ' + money(r.inicial) + ' y ' + p.cuotas +
+    mensaje = 'Financiamiento CrediFacil. Equipo de ' + money(precio) + ': inicial de ' + money(inicial) + ' y ' + p.cuotas +
               ' cuotas quincenales de ' + money(r.cuota) + ' (' + p.meses + ' meses).';
     $('texto').textContent = mensaje;
     $('copiar').disabled = false;
 
+    var tbody = $('tabla'); tbody.innerHTML = '';
     PLANES.forEach(function (q, i) {
-      var c = calcular(precio, q);
+      var c = calcular(precio, inicial, q);
       var tr = document.createElement('tr'); if (i === seleccionado) tr.className = 'on';
       tr.innerHTML = '<td>' + q.meses + ' meses</td><td class="n">' + q.cuotas + '</td><td class="n">' + money(c.cuota) + '</td>';
       tbody.appendChild(tr);
@@ -257,6 +303,7 @@ tr.on td { color: var(--accent-text); font-weight: 700; }
   }
 
   $('precio').addEventListener('input', pintar);
+  $('inicialcli').addEventListener('input', pintar);
 
   $('copiar').addEventListener('click', function () {
     var aviso = $('aviso');
